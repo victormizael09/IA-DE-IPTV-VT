@@ -272,7 +272,14 @@ async function startWhatsApp() {
     if (!msg.message || msg.key.fromMe) return;
 
     const jid = msg.key.remoteJid;
-    if (!jid || jid.includes("@g.us")) return; // Ignore groups
+    if (!jid || jid.includes("@g.us") || jid.includes("@broadcast") || jid === "status@broadcast") return; // Ignore groups and status
+
+    // Ignore old messages (older than 2 minutes)
+    const msgTimestamp = msg.messageTimestamp;
+    if (msgTimestamp && (Date.now() / 1000 - Number(msgTimestamp) > 120)) {
+      console.log(`Mensagem antiga ignorada de ${jid}`);
+      return;
+    }
 
     const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
     if (!text) return;
@@ -350,7 +357,9 @@ async function startServer() {
   
   app.post("/api/history/clear", async (req, res) => {
     chatHistory = [];
+    activeChats = {};
     await saveHistoryToFirebase();
+    await saveActiveChatsToFirebase();
     res.json({ success: true });
   });
 

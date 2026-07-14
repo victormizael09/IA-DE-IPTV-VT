@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { MessageCircle, Users, Zap, Clock, UserCheck, Bot } from "lucide-react";
+import { MessageCircle, Users, Zap, Clock, UserCheck, Bot, Trash2 } from "lucide-react";
 import { api } from "../../api";
 import { ChatHistoryLog } from "../../types";
 
@@ -24,6 +24,16 @@ export default function Dashboard() {
       console.error(error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleClearHistory = async () => {
+    if (!confirm("Tem certeza que deseja apagar todo o histórico de conversas e os atendimentos ativos?")) return;
+    try {
+      await api.clearChatHistory();
+      await loadData();
+    } catch (error) {
+      console.error(error);
     }
   };
 
@@ -126,7 +136,12 @@ export default function Dashboard() {
 
         {/* Logs section */}
         <div className="bento-card min-h-[400px] lg:min-h-0">
-        <div className="card-title">Últimas Conversas (Logs)</div>
+        <div className="flex justify-between items-center mb-6">
+          <div className="card-title !mb-0">Últimas Conversas (Logs)</div>
+          <button onClick={handleClearHistory} className="flex items-center gap-2 text-sm text-red-400 hover:text-red-300 transition-colors bg-red-500/10 hover:bg-red-500/20 px-3 py-1.5 rounded-lg">
+            <Trash2 className="w-4 h-4" /> Limpar
+          </button>
+        </div>
         <div className="flex-1 overflow-y-auto pr-2 space-y-4">
           {history.length === 0 ? (
             <div className="p-6 text-center text-gray-500">
