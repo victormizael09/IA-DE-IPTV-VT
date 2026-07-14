@@ -1,0 +1,6 @@
+{
+  "name": "WhatsApp AI Assistant",
+  "description": "Uma plataforma completa para atendimento automatizado no WhatsApp com Inteligência Artificial.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
