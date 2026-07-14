@@ -6,6 +6,25 @@ import fs from "fs";
 import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import QRCode from 'qrcode';
+import { initializeApp, cert } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+
+// Initialize Firebase
+let db: FirebaseFirestore.Firestore | null = null;
+try {
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+    initializeApp({
+      credential: cert(serviceAccount)
+    });
+    db = getFirestore();
+    console.log("Firebase initialized successfully");
+  } else {
+    console.warn("FIREBASE_SERVICE_ACCOUNT_KEY not found. Running without persistent database.");
+  }
+} catch (error) {
+  console.error("Failed to initialize Firebase:", error);
+}
 
 // Initialize Gemini API
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -45,6 +64,72 @@ let waQr = "";
 let waPairingCode = "";
 
 let activeChats: Record<string, { jid: string, status: "AI" | "HUMAN", lastMessage: string, timestamp: number }> = {};
+
+// -- Firebase Sync Helpers --
+async function loadDataFromFirebase() {
+  if (!db) return;
+  try {
+    const configRef = db.collection('config');
+    const settingsDoc = await configRef.doc('settings').get();
+    if (settingsDoc.exists) settings = { ...settings, ...settingsDoc.data() };
+    
+    const trainingDoc = await configRef.doc('training').get();
+    if (trainingDoc.exists) trainingData = trainingDoc.data()?.data || trainingData;
+
+    const historyDoc = await configRef.doc('history').get();
+    if (historyDoc.exists) chatHistory = historyDoc.data()?.data || chatHistory;
+    
+    const chatsDoc = await configRef.doc('activeChats').get();
+    if (chatsDoc.exists) activeChats = chatsDoc.data()?.data || activeChats;
+
+    console.log("Data loaded from Firebase.");
+  } catch (err) {
+    console.error("Error loading data from Firebase:", err);
+  }
+}
+
+async function backupAuthToFirebase() {
+  if (!db) return;
+  try {
+    const authPath = 'baileys_auth_info';
+    if (!fs.existsSync(authPath)) return;
+    const files = fs.readdirSync(authPath);
+    const authData: Record<string, string> = {};
+    for (const file of files) {
+      if (file.endsWith('.json')) {
+        authData[file] = fs.readFileSync(path.join(authPath, file), 'utf-8');
+      }
+    }
+    await db.collection('config').doc('wa_auth').set({ files: authData });
+  } catch (err) {
+    console.error("Backup auth error:", err);
+  }
+}
+
+async function restoreAuthFromFirebase() {
+  if (!db) return;
+  try {
+    const doc = await db.collection('config').doc('wa_auth').get();
+    if (doc.exists) {
+      const authData = doc.data()?.files;
+      if (authData) {
+        const authPath = 'baileys_auth_info';
+        if (!fs.existsSync(authPath)) fs.mkdirSync(authPath);
+        for (const [file, content] of Object.entries(authData)) {
+          fs.writeFileSync(path.join(authPath, file), content as string, 'utf-8');
+        }
+        console.log("WhatsApp auth data restored from Firebase.");
+      }
+    }
+  } catch (err) {
+    console.error("Restore auth error:", err);
+  }
+}
+
+async function saveSettingsToFirebase() { if (db) await db.collection('config').doc('settings').set(settings); }
+async function saveTrainingToFirebase() { if (db) await db.collection('config').doc('training').set({ data: trainingData }); }
+async function saveHistoryToFirebase() { if (db) await db.collection('config').doc('history').set({ data: chatHistory }); }
+async function saveActiveChatsToFirebase() { if (db) await db.collection('config').doc('activeChats').set({ data: activeChats }); }
 
 async function generateAIResponse(message: string, userId: string) {
   // Check business hours
@@ -106,6 +191,8 @@ A HORA ATUAL É: ${now.toLocaleTimeString("pt-BR")}.
       userMessage: message,
       aiResponse: reply.replace("[TRANSFERIR]", "").trim()
     });
+    
+    saveHistoryToFirebase();
 
     return reply;
   } catch (error) {
@@ -129,7 +216,10 @@ async function startWhatsApp() {
     browser: ["Ubuntu", "Chrome", "20.0.04"]
   });
   
-  sock.ev.on('creds.update', saveCreds);
+  sock.ev.on('creds.update', async () => {
+    await saveCreds();
+    await backupAuthToFirebase();
+  });
   
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
@@ -178,6 +268,7 @@ async function startWhatsApp() {
       activeChats[jid].lastMessage = text;
       activeChats[jid].timestamp = Date.now();
     }
+    saveActiveChatsToFirebase();
 
     // If user is already handled by human, ignore
     if (activeChats[jid].status === "HUMAN") return;
@@ -194,6 +285,7 @@ async function startWhatsApp() {
     if (reply.includes("[TRANSFERIR]")) {
       activeChats[jid].status = "HUMAN"; // Human takes over from here
       cleanReply = reply.replace("[TRANSFERIR]", "").trim();
+      saveActiveChatsToFirebase();
     }
 
     await sock.sendMessage(jid, { text: cleanReply });
@@ -203,8 +295,11 @@ async function startWhatsApp() {
 }
 
 async function startServer() {
+  await loadDataFromFirebase();
+  await restoreAuthFromFirebase();
+
   const app = express();
-  const PORT = process.env.PORT || 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT as string, 10) : 3000;
 
   app.use(express.json());
 
@@ -215,8 +310,9 @@ async function startServer() {
     res.json(settings);
   });
 
-  app.post("/api/settings", (req, res) => {
+  app.post("/api/settings", async (req, res) => {
     settings = { ...settings, ...req.body };
+    await saveSettingsToFirebase();
     res.json({ success: true, settings });
   });
 
@@ -225,8 +321,9 @@ async function startServer() {
     res.json(trainingData);
   });
 
-  app.post("/api/training", (req, res) => {
+  app.post("/api/training", async (req, res) => {
     trainingData = req.body;
+    await saveTrainingToFirebase();
     res.json({ success: true, trainingData });
   });
 
@@ -235,8 +332,9 @@ async function startServer() {
     res.json(chatHistory);
   });
   
-  app.post("/api/history/clear", (req, res) => {
+  app.post("/api/history/clear", async (req, res) => {
     chatHistory = [];
+    await saveHistoryToFirebase();
     res.json({ success: true });
   });
 
@@ -245,10 +343,11 @@ async function startServer() {
     res.json(Object.values(activeChats));
   });
 
-  app.post("/api/chats/toggle", (req, res) => {
+  app.post("/api/chats/toggle", async (req, res) => {
     const { jid } = req.body;
     if (activeChats[jid]) {
       activeChats[jid].status = activeChats[jid].status === "AI" ? "HUMAN" : "AI";
+      await saveActiveChatsToFirebase();
       res.json({ success: true, chat: activeChats[jid] });
     } else {
       res.status(404).json({ error: "Chat not found" });
@@ -282,7 +381,15 @@ async function startServer() {
       }
 
       // Format number (remove non-digits)
-      const cleanNumber = phoneNumber.replace(/\D/g, '');
+      let cleanNumber = phoneNumber.replace(/\D/g, '');
+      // If it looks like a brazilian number without country code (10 or 11 digits)
+      if (cleanNumber.length === 10 || cleanNumber.length === 11) {
+        cleanNumber = "55" + cleanNumber;
+      }
+      
+      // Wait a bit to ensure socket is ready for pairing
+      await new Promise(r => setTimeout(r, 1000));
+      
       const code = await waSocket.requestPairingCode(cleanNumber);
       waPairingCode = code;
       res.json({ code });

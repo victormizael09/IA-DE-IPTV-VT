@@ -161,13 +161,16 @@ export default function Connection() {
                 </div>
               ) : (
                 <div className="w-full space-y-4">
-                  <input 
-                    type="text" 
-                    value={phoneNumber}
-                    onChange={(e) => setPhoneNumber(e.target.value)}
-                    placeholder="Ex: 5511999999999" 
-                    className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-white outline-none transition-all"
-                  />
+                  <div>
+                    <input 
+                      type="text" 
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      placeholder="Ex: 5511999999999" 
+                      className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-white outline-none transition-all"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1 text-left">Insira com o código do país (Ex: 55 para o Brasil)</p>
+                  </div>
                   <button 
                     onClick={handleGetPairingCode}
                     disabled={loadingCode || waStatus === "CONNECTING"}
