@@ -160,23 +160,39 @@ export default function Dashboard() {
         ))}
         {/* WhatsApp Status (Custom Bento Card) */}
         <div className="bento-card col-span-2 relative" style={{ gridColumn: 'span 2', gridRow: 'span 3', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none' }}>
-          <div className="card-title flex justify-between" style={{ color: 'rgba(255,255,255,0.8)' }}>
+          <div className="card-title flex justify-between items-center" style={{ color: 'rgba(255,255,255,0.8)' }}>
             Status do WhatsApp
             
-            {notifyPermission !== "granted" && (
+            <div className="flex gap-2">
               <button 
-                onClick={requestNotificationPermission}
+                onClick={async () => {
+                  try {
+                    const res = await api.testPushNotification();
+                    console.log("Test push result:", res);
+                  } catch (e) {
+                    console.error("Error testing push:", e);
+                  }
+                }}
                 className="flex items-center gap-1 text-[10px] bg-white/20 hover:bg-white/30 px-2 py-1 rounded transition-colors"
-                title="Ativar Notificações"
+                title="Testar Push"
               >
-                <Bell className="w-3 h-3" /> Ativar
+                Testar Push
               </button>
-            )}
-            {notifyPermission === "granted" && (
-              <div className="flex items-center gap-1 text-[10px] text-emerald-100" title="Notificações ativas">
-                <Bell className="w-3 h-3" />
-              </div>
-            )}
+              {notifyPermission !== "granted" && (
+                <button 
+                  onClick={requestNotificationPermission}
+                  className="flex items-center gap-1 text-[10px] bg-white/20 hover:bg-white/30 px-2 py-1 rounded transition-colors"
+                  title="Ativar Notificações"
+                >
+                  <Bell className="w-3 h-3" /> Ativar
+                </button>
+              )}
+              {notifyPermission === "granted" && (
+                <div className="flex items-center gap-1 text-[10px] text-emerald-100" title="Notificações ativas">
+                  <Bell className="w-3 h-3" /> Ativas
+                </div>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-4 mt-2">
             <div className="p-3 bg-white/20 rounded-xl">

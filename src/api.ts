@@ -121,5 +121,11 @@ export const api = {
       body: JSON.stringify(subscription),
     });
     if (!res.ok) throw new Error("Failed to subscribe");
+  },
+  
+  testPushNotification: async (): Promise<{ success: boolean; count: number }> => {
+    const res = await fetch("/api/test-push", { method: "POST" });
+    if (!res.ok) throw new Error("Failed to test push notification");
+    return res.json();
   }
 };

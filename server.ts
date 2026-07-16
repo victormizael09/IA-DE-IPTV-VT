@@ -368,6 +368,24 @@ async function startServer() {
     res.status(201).json({});
   });
   
+  app.post('/api/test-push', async (req, res) => {
+    console.log(`Testing push to ${pushSubscriptions.length} subscriptions`);
+    let successCount = 0;
+    for (const sub of pushSubscriptions) {
+      try {
+        await webpush.sendNotification(sub, JSON.stringify({
+          title: 'Notificação de Teste',
+          body: 'Se você está vendo isso, as notificações push estão funcionando!',
+          url: '/'
+        }));
+        successCount++;
+      } catch (e) {
+        console.error("Test push delivery error:", e);
+      }
+    }
+    res.json({ success: true, count: successCount });
+  });
+  
   // -- Settings --
   app.get("/api/settings", (req, res) => {
     res.json(settings);
