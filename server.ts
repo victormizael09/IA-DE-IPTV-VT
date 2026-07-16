@@ -8,6 +8,11 @@ import pino from 'pino';
 import QRCode from 'qrcode';
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import webpush from 'web-push';
+
+const publicVapidKey = 'BG-Paxm4PLkEHBh78pCYCTMOTLzVQ3GMzNt2PVLVUvM0Y5_sMstiwioJflX7CbRAEBMQBOnhP2DOYhjbs4Y12AA';
+const privateVapidKey = 'Pv2LGzRyeGQvEqfF2PF6BhuBwj7vr8mE5Eijo5TANVg';
+webpush.setVapidDetails('mailto:suporte@whatsappai.com', publicVapidKey, privateVapidKey);
 
 // Initialize Firebase
 let db: FirebaseFirestore.Firestore | null = null;
@@ -64,6 +69,7 @@ let waQr = "";
 let waPairingCode = "";
 
 let activeChats: Record<string, { jid: string, name?: string, status: "AI" | "HUMAN", lastMessage: string, timestamp: number }> = {};
+let pushSubscriptions: any[] = [];
 
 // -- Firebase Sync Helpers --
 async function loadDataFromFirebase() {
@@ -81,6 +87,9 @@ async function loadDataFromFirebase() {
     
     const chatsDoc = await configRef.doc('activeChats').get();
     if (chatsDoc.exists) activeChats = chatsDoc.data()?.data || activeChats;
+
+    const subsDoc = await configRef.doc('push_subscriptions').get();
+    if (subsDoc.exists) pushSubscriptions = subsDoc.data()?.data || [];
 
     console.log("Data loaded from Firebase.");
   } catch (err) {
@@ -312,6 +321,19 @@ async function startWhatsApp() {
       activeChats[jid].status = "HUMAN"; // Human takes over from here
       cleanReply = reply.replace("[TRANSFERIR]", "").trim();
       saveActiveChatsToFirebase();
+      
+      const payload = JSON.stringify({ 
+        title: 'Novo Atendimento Humano!', 
+        body: `O cliente ${activeChats[jid].name || jid.split('@')[0]} solicitou atendimento humano.`,
+        url: '/'
+      });
+      for (const sub of pushSubscriptions) {
+        try {
+          await webpush.sendNotification(sub, payload);
+        } catch (e) {
+          console.error("Push delivery error:", e);
+        }
+      }
     }
 
     await sock.sendMessage(jid, { text: cleanReply });
@@ -330,6 +352,21 @@ async function startServer() {
   app.use(express.json());
 
   // API Routes
+  
+  app.get('/api/vapidPublicKey', (req, res) => {
+    res.send(publicVapidKey);
+  });
+  
+  app.post('/api/subscribe', async (req, res) => {
+    const subscription = req.body;
+    if (!pushSubscriptions.find(s => s.endpoint === subscription.endpoint)) {
+      pushSubscriptions.push(subscription);
+      if (db) {
+        await db.collection('config').doc('push_subscriptions').set({ data: pushSubscriptions });
+      }
+    }
+    res.status(201).json({});
+  });
   
   // -- Settings --
   app.get("/api/settings", (req, res) => {

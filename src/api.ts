@@ -55,7 +55,7 @@ export const api = {
     return res.json();
   },
 
-  getActiveChats: async (): Promise<{ jid: string; status: "AI" | "HUMAN"; lastMessage: string; timestamp: number }[]> => {
+  getActiveChats: async (): Promise<{ jid: string; name?: string; status: "AI" | "HUMAN"; lastMessage: string; timestamp: number }[]> => {
     const res = await fetch("/api/chats");
     if (!res.ok) throw new Error("Failed to fetch active chats");
     return res.json();
@@ -107,4 +107,19 @@ export const api = {
     if (!res.ok) throw new Error("Failed to reset WhatsApp");
     return res.json();
   },
+  
+  getVapidPublicKey: async (): Promise<string> => {
+    const res = await fetch("/api/vapidPublicKey");
+    if (!res.ok) throw new Error("Failed to fetch public key");
+    return res.text();
+  },
+  
+  subscribeToPush: async (subscription: any): Promise<void> => {
+    const res = await fetch("/api/subscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(subscription),
+    });
+    if (!res.ok) throw new Error("Failed to subscribe");
+  }
 };

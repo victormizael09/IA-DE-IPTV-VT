@@ -5,7 +5,7 @@ import { ChatHistoryLog } from "../../types";
 
 export default function Dashboard() {
   const [history, setHistory] = useState<ChatHistoryLog[]>([]);
-  const [activeChats, setActiveChats] = useState<{ jid: string; status: "AI" | "HUMAN"; lastMessage: string; timestamp: number }[]>([]);
+  const [activeChats, setActiveChats] = useState<{ jid: string; name?: string; status: "AI" | "HUMAN"; lastMessage: string; timestamp: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [notifyPermission, setNotifyPermission] = useState<NotificationPermission>("default");
   const [selectedHistoryJid, setSelectedHistoryJid] = useState<string | null>(null);
@@ -26,8 +26,37 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, []);
 
+  const urlBase64ToUint8Array = (base64String: string) => {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  };
+
   const requestNotificationPermission = async () => {
-    if ("Notification" in window) {
+    if ("Notification" in window && "serviceWorker" in navigator) {
+      const permission = await Notification.requestPermission();
+      setNotifyPermission(permission);
+      
+      if (permission === "granted") {
+        try {
+          const registration = await navigator.serviceWorker.ready;
+          const pubKey = await api.getVapidPublicKey();
+          const subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(pubKey)
+          });
+          await api.subscribeToPush(subscription);
+          console.log("Push notification subscribed!");
+        } catch (e) {
+          console.error("Push subscription failed:", e);
+        }
+      }
+    } else if ("Notification" in window) {
       const permission = await Notification.requestPermission();
       setNotifyPermission(permission);
     }
