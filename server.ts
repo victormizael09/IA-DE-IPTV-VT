@@ -276,6 +276,29 @@ async function startWhatsApp() {
     }
   });
 
+  sock.ev.on('messaging-history.set', async ({ chats, contacts, messages, isLatest }) => {
+    console.log(`Carregando histórico: ${chats.length} chats recebidos.`);
+    let updated = false;
+    for (const chat of chats) {
+      if (!chat.id.includes("@g.us") && !chat.id.includes("@broadcast") && chat.id !== "status@broadcast") {
+        if (!activeChats[chat.id]) {
+          const name = chat.name || chat.id.split('@')[0];
+          activeChats[chat.id] = { 
+            jid: chat.id, 
+            name: name, 
+            status: "HUMAN", 
+            lastMessage: "Contato existente (Histórico)", 
+            timestamp: Date.now() 
+          };
+          updated = true;
+        }
+      }
+    }
+    if (updated) {
+      saveActiveChatsToFirebase();
+    }
+  });
+
   sock.ev.on('messages.upsert', async (m) => {
     if (m.type !== 'notify') return;
     const msg = m.messages[0];
