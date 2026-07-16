@@ -12,7 +12,9 @@ export default function Dashboard() {
   
   const prevChatsRef = useRef<{ [jid: string]: "AI" | "HUMAN" }>({});
   
-  const groupedHistory = history.reduce((acc, log) => {
+  const aiHistory = history.filter(h => activeChats.find(c => c.jid === h.jid)?.status === "AI");
+  
+  const groupedHistory = aiHistory.reduce((acc, log) => {
     const jid = log.jid || 'unknown';
     if (!acc[jid]) acc[jid] = [];
     acc[jid].push(log);
@@ -133,11 +135,11 @@ export default function Dashboard() {
   const activeAICount = activeChats.filter(c => c.status === "AI").length;
   
   const uniqueClientsCount = Object.keys(groupedHistory).length;
-  const totalMessagesCount = history.length;
+  const totalMessagesCount = aiHistory.length;
   
   const stats = [
-    { label: "Mensagens Respondidas", value: totalMessagesCount, icon: MessageCircle, color: "text-blue-500", bg: "bg-blue-500/20" },
-    { label: "Clientes Atendidos", value: uniqueClientsCount, icon: Users, color: "text-emerald-500", bg: "bg-emerald-500/20" },
+    { label: "Mensagens Respondidas (IA)", value: totalMessagesCount, icon: MessageCircle, color: "text-blue-500", bg: "bg-blue-500/20" },
+    { label: "Clientes Atendidos (IA)", value: uniqueClientsCount, icon: Users, color: "text-emerald-500", bg: "bg-emerald-500/20" },
     { label: "Tempo Médio (IA)", value: "1.2s", icon: Zap, color: "text-amber-500", bg: "bg-amber-500/20" },
     { label: "Economia", value: `${(uniqueClientsCount * 3)} min`, icon: Clock, color: "text-purple-500", bg: "bg-purple-500/20" },
   ];
@@ -224,7 +226,7 @@ export default function Dashboard() {
                 Nenhum atendimento no momento.
               </div>
             ) : (
-              activeChats.sort((a, b) => b.timestamp - a.timestamp).map((chat) => (
+              [...activeChats].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).map((chat) => (
                 <div key={chat.jid} className={`p-4 rounded-xl border flex flex-col justify-between ${chat.status === 'HUMAN' ? 'border-amber-500/50 bg-amber-500/10' : 'border-slate-700 bg-slate-800/40'}`}>
                   <div className="flex justify-between items-center mb-3">
                     <span className="text-sm font-bold text-slate-200">

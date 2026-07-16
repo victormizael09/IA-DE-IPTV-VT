@@ -70,6 +70,7 @@ let waPairingCode = "";
 
 let activeChats: Record<string, { jid: string, name?: string, status: "AI" | "HUMAN", lastMessage: string, timestamp: number }> = {};
 let pushSubscriptions: any[] = [];
+let contactsMap: Record<string, string> = {};
 
 // -- Firebase Sync Helpers --
 async function loadDataFromFirebase() {
@@ -90,10 +91,23 @@ async function loadDataFromFirebase() {
 
     const subsDoc = await configRef.doc('push_subscriptions').get();
     if (subsDoc.exists) pushSubscriptions = subsDoc.data()?.data || [];
+    
+    const contactsDoc = await configRef.doc('contactsMap').get();
+    if (contactsDoc.exists) contactsMap = contactsDoc.data()?.data || contactsMap;
 
     console.log("Data loaded from Firebase.");
   } catch (err) {
     console.error("Error loading data from Firebase:", err);
+  }
+}
+
+async function saveContactsToFirebase() {
+  if (db) {
+    try {
+      await db.collection('config').doc('contactsMap').set({ data: contactsMap });
+    } catch (e) {
+      console.error("Error saving contacts:", e);
+    }
   }
 }
 
@@ -276,13 +290,52 @@ async function startWhatsApp() {
     }
   });
 
+  sock.ev.on('contacts.upsert', (contacts) => {
+    let updated = false;
+    for (const contact of contacts) {
+      if (contact.name || contact.notify) {
+        contactsMap[contact.id] = contact.name || contact.notify || contact.id.split('@')[0];
+        if (activeChats[contact.id] && contact.name) {
+          activeChats[contact.id].name = contact.name;
+          updated = true;
+        }
+      }
+    }
+    saveContactsToFirebase();
+    if (updated) saveActiveChatsToFirebase();
+  });
+
+  sock.ev.on('contacts.update', (contacts) => {
+    let updated = false;
+    for (const contact of contacts) {
+      if (contact.name) {
+        contactsMap[contact.id] = contact.name;
+        if (activeChats[contact.id]) {
+          activeChats[contact.id].name = contact.name;
+          updated = true;
+        }
+      }
+    }
+    saveContactsToFirebase();
+    if (updated) saveActiveChatsToFirebase();
+  });
+
   sock.ev.on('messaging-history.set', async ({ chats, contacts, messages, isLatest }) => {
     console.log(`Carregando histórico: ${chats.length} chats recebidos.`);
+    let contactsUpdated = false;
+    for (const contact of contacts) {
+      if (contact.name || contact.notify) {
+        contactsMap[contact.id] = contact.name || contact.notify || contact.id.split('@')[0];
+        contactsUpdated = true;
+      }
+    }
+    if (contactsUpdated) saveContactsToFirebase();
+
     let updated = false;
     for (const chat of chats) {
       if (!chat.id.includes("@g.us") && !chat.id.includes("@broadcast") && chat.id !== "status@broadcast") {
         if (!activeChats[chat.id]) {
-          const name = chat.name || chat.id.split('@')[0];
+          const name = contactsMap[chat.id] || chat.name || chat.id.split('@')[0];
           activeChats[chat.id] = { 
             jid: chat.id, 
             name: name, 
@@ -290,6 +343,9 @@ async function startWhatsApp() {
             lastMessage: "Contato existente (Histórico)", 
             timestamp: Date.now() 
           };
+          updated = true;
+        } else if (contactsMap[chat.id] && activeChats[chat.id].name !== contactsMap[chat.id]) {
+          activeChats[chat.id].name = contactsMap[chat.id];
           updated = true;
         }
       }
@@ -305,7 +361,7 @@ async function startWhatsApp() {
     if (!msg.message || msg.key.fromMe) return;
 
     const jid = msg.key.remoteJid;
-    const pushName = msg.pushName || jid?.split('@')[0];
+    const pushName = contactsMap[jid || ''] || msg.pushName || jid?.split('@')[0];
     if (!jid || jid.includes("@g.us") || jid.includes("@broadcast") || jid === "status@broadcast") return; // Ignore groups and status
 
     // Ignore old messages (older than 2 minutes)
