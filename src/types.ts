@@ -28,6 +28,8 @@ export interface ChatHistoryLog {
   timestamp: string;
   userMessage: string;
   aiResponse: string;
+  jid?: string;
+  name?: string;
 }
 
 export interface ChatMessage {

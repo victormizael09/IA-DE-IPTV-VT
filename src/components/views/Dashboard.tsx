@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { MessageCircle, Users, Zap, Clock, UserCheck, Bot, Trash2 } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
+import { MessageCircle, Users, Zap, Clock, UserCheck, Bot, Trash2, Bell, BellOff } from "lucide-react";
 import { api } from "../../api";
 import { ChatHistoryLog } from "../../types";
 
@@ -7,18 +7,56 @@ export default function Dashboard() {
   const [history, setHistory] = useState<ChatHistoryLog[]>([]);
   const [activeChats, setActiveChats] = useState<{ jid: string; status: "AI" | "HUMAN"; lastMessage: string; timestamp: number }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [notifyPermission, setNotifyPermission] = useState<NotificationPermission>("default");
+  const [selectedHistoryJid, setSelectedHistoryJid] = useState<string | null>(null);
+  
+  const prevChatsRef = useRef<{ [jid: string]: "AI" | "HUMAN" }>({});
+  
+  const groupedHistory = history.reduce((acc, log) => {
+    const jid = log.jid || 'unknown';
+    if (!acc[jid]) acc[jid] = [];
+    acc[jid].push(log);
+    return acc;
+  }, {} as Record<string, ChatHistoryLog[]>);
 
   useEffect(() => {
+    setNotifyPermission(Notification.permission);
     loadData();
     const interval = setInterval(loadData, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  const requestNotificationPermission = async () => {
+    if ("Notification" in window) {
+      const permission = await Notification.requestPermission();
+      setNotifyPermission(permission);
+    }
+  };
 
   const loadData = async () => {
     try {
       const logs = await api.getChatHistory();
       setHistory(logs);
       const chats = await api.getActiveChats();
+      
+      // Check for notifications
+      if ("Notification" in window && Notification.permission === "granted") {
+        chats.forEach(chat => {
+          const prevStatus = prevChatsRef.current[chat.jid];
+          if (prevStatus === "AI" && chat.status === "HUMAN") {
+            new Notification("Novo Atendimento Humano!", {
+              body: `O cliente ${chat.jid.split('@')[0]} solicitou atendimento humano (Teste/Plano).`,
+              icon: "/vite.svg" // You can replace with an actual icon path if available
+            });
+          }
+          prevChatsRef.current[chat.jid] = chat.status;
+        });
+      } else {
+        chats.forEach(chat => {
+          prevChatsRef.current[chat.jid] = chat.status;
+        });
+      }
+
       setActiveChats(chats);
     } catch (error) {
       console.error(error);
@@ -47,7 +85,7 @@ export default function Dashboard() {
   };
 
   const activeAICount = activeChats.filter(c => c.status === "AI").length;
-
+  
   const stats = [
     { label: "Mensagens Respondidas", value: history.length * 2, icon: MessageCircle, color: "text-blue-500", bg: "bg-blue-500/20" },
     { label: "Clientes Atendidos", value: history.length, icon: Users, color: "text-emerald-500", bg: "bg-emerald-500/20" },
@@ -77,10 +115,26 @@ export default function Dashboard() {
             <div className="stat-label">Registrado hoje</div>
           </div>
         ))}
-
         {/* WhatsApp Status (Custom Bento Card) */}
-        <div className="bento-card col-span-2" style={{ gridColumn: 'span 2', gridRow: 'span 3', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none' }}>
-          <div className="card-title" style={{ color: 'rgba(255,255,255,0.8)' }}>Status do WhatsApp</div>
+        <div className="bento-card col-span-2 relative" style={{ gridColumn: 'span 2', gridRow: 'span 3', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none' }}>
+          <div className="card-title flex justify-between" style={{ color: 'rgba(255,255,255,0.8)' }}>
+            Status do WhatsApp
+            
+            {notifyPermission !== "granted" && (
+              <button 
+                onClick={requestNotificationPermission}
+                className="flex items-center gap-1 text-[10px] bg-white/20 hover:bg-white/30 px-2 py-1 rounded transition-colors"
+                title="Ativar Notificações"
+              >
+                <Bell className="w-3 h-3" /> Ativar
+              </button>
+            )}
+            {notifyPermission === "granted" && (
+              <div className="flex items-center gap-1 text-[10px] text-emerald-100" title="Notificações ativas">
+                <Bell className="w-3 h-3" />
+              </div>
+            )}
+          </div>
           <div className="flex items-center gap-4 mt-2">
             <div className="p-3 bg-white/20 rounded-xl">
               <MessageCircle className="w-6 h-6 text-white" />
@@ -96,7 +150,9 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" style={{ gridColumn: 'span 10', gridRow: 'span 9' }}>
         {/* Active Chats section */}
         <div className="bento-card min-h-[400px] lg:min-h-0">
-          <div className="card-title">Atendimentos em Andamento</div>
+          <div className="card-title flex justify-between">
+            Atendimentos em Andamento
+          </div>
           <div className="flex-1 overflow-y-auto pr-2 space-y-4">
             {activeChats.length === 0 ? (
               <div className="p-6 text-center text-gray-500">
@@ -104,10 +160,10 @@ export default function Dashboard() {
               </div>
             ) : (
               activeChats.sort((a, b) => b.timestamp - a.timestamp).map((chat) => (
-                <div key={chat.jid} className="p-4 rounded-xl border border-slate-700 bg-slate-800/40 flex flex-col justify-between">
+                <div key={chat.jid} className={`p-4 rounded-xl border flex flex-col justify-between ${chat.status === 'HUMAN' ? 'border-amber-500/50 bg-amber-500/10' : 'border-slate-700 bg-slate-800/40'}`}>
                   <div className="flex justify-between items-center mb-3">
                     <span className="text-sm font-bold text-slate-200">
-                      {chat.jid.split('@')[0]}
+                      {chat.name || chat.jid.split('@')[0]}
                     </span>
                     <button
                       onClick={() => toggleChatStatus(chat.jid)}
@@ -135,40 +191,82 @@ export default function Dashboard() {
         </div>
 
         {/* Logs section */}
-        <div className="bento-card min-h-[400px] lg:min-h-0">
-        <div className="flex justify-between items-center mb-6">
-          <div className="card-title !mb-0">Últimas Conversas (Logs)</div>
-          <button onClick={handleClearHistory} className="flex items-center gap-2 text-sm text-red-400 hover:text-red-300 transition-colors bg-red-500/10 hover:bg-red-500/20 px-3 py-1.5 rounded-lg">
-            <Trash2 className="w-4 h-4" /> Limpar
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto pr-2 space-y-4">
-          {history.length === 0 ? (
-            <div className="p-6 text-center text-gray-500">
-              Nenhuma conversa registrada ainda.
+        <div className="bento-card min-h-[400px] lg:min-h-0 flex flex-col">
+          <div className="flex justify-between items-center mb-6">
+            <div className="card-title !mb-0">
+              {selectedHistoryJid ? (
+                <button 
+                  onClick={() => setSelectedHistoryJid(null)}
+                  className="flex items-center gap-2 hover:text-emerald-400 transition-colors"
+                >
+                  <span className="text-xl">←</span> Conversas ({groupedHistory[selectedHistoryJid]?.[0]?.name || selectedHistoryJid.split('@')[0]})
+                </button>
+              ) : (
+                "Histórico de Clientes"
+              )}
             </div>
-          ) : (
-            history.slice().reverse().map((log) => (
-              <div key={log.id} className="p-4 rounded-xl border border-slate-700 bg-slate-800/40">
-                <div className="flex justify-between items-start mb-2">
-                  <span className="text-xs text-emerald-500 font-bold">Usuário</span>
-                  <span className="text-xs text-slate-500">{new Date(log.timestamp).toLocaleString("pt-BR")}</span>
+            {!selectedHistoryJid && (
+              <button onClick={handleClearHistory} className="flex items-center gap-2 text-sm text-red-400 hover:text-red-300 transition-colors bg-red-500/10 hover:bg-red-500/20 px-3 py-1.5 rounded-lg">
+                <Trash2 className="w-4 h-4" /> Limpar
+              </button>
+            )}
+          </div>
+          
+          <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+            {!selectedHistoryJid ? (
+              // List of clients
+              Object.keys(groupedHistory).length === 0 ? (
+                <div className="p-6 text-center text-gray-500">
+                  Nenhuma conversa registrada ainda.
                 </div>
-                <div className="space-y-3">
-                  <div className="bg-slate-800 p-3 rounded-xl rounded-tl-none inline-block max-w-[80%] border border-slate-700">
-                    <p className="text-sm text-slate-300">{log.userMessage}</p>
+              ) : (
+                Object.entries(groupedHistory).map(([jid, logsObj]) => {
+                  const logs = logsObj as ChatHistoryLog[];
+                  const lastLog = logs[logs.length - 1];
+                  const name = lastLog.name || jid.split('@')[0];
+                  return (
+                    <div 
+                      key={jid} 
+                      onClick={() => setSelectedHistoryJid(jid)}
+                      className="p-4 rounded-xl border border-slate-700 bg-slate-800/40 cursor-pointer hover:bg-slate-700/50 transition-colors flex justify-between items-center"
+                    >
+                      <div>
+                        <div className="font-bold text-slate-200">{name}</div>
+                        <div className="text-xs text-slate-400 truncate max-w-[200px] mt-1">{lastLog.userMessage}</div>
+                      </div>
+                      <div className="flex flex-col items-end gap-2">
+                        <span className="text-[10px] text-slate-500">{new Date(lastLog.timestamp).toLocaleString("pt-BR")}</span>
+                        <span className="bg-emerald-500/20 text-emerald-400 text-[10px] px-2 py-1 rounded-full font-bold">
+                          {logs.length} msgs
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
+              )
+            ) : (
+              // Chat messages for selected client
+              groupedHistory[selectedHistoryJid]?.map((log) => (
+                <div key={log.id} className="p-4 rounded-xl border border-slate-700 bg-slate-800/40">
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="text-xs text-emerald-500 font-bold">{log.name || selectedHistoryJid.split('@')[0]}</span>
+                    <span className="text-xs text-slate-500">{new Date(log.timestamp).toLocaleString("pt-BR")}</span>
                   </div>
-                  <div className="flex justify-end">
-                    <div className="bg-emerald-600 text-white p-3 rounded-xl rounded-tr-none inline-block max-w-[80%]">
-                      <p className="text-sm">{log.aiResponse}</p>
+                  <div className="space-y-3">
+                    <div className="bg-slate-800 p-3 rounded-xl rounded-tl-none inline-block max-w-[80%] border border-slate-700">
+                      <p className="text-sm text-slate-300">{log.userMessage}</p>
+                    </div>
+                    <div className="flex justify-end">
+                      <div className="bg-emerald-600 text-white p-3 rounded-xl rounded-tr-none inline-block max-w-[80%]">
+                        <p className="text-sm">{log.aiResponse}</p>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))
-          )}
+              ))
+            )}
+          </div>
         </div>
-      </div>
       </div>
     </>
   );

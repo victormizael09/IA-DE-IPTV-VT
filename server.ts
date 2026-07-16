@@ -63,7 +63,7 @@ let waStatus = "DISCONNECTED"; // DISCONNECTED, CONNECTING, QR_READY, CONNECTED
 let waQr = "";
 let waPairingCode = "";
 
-let activeChats: Record<string, { jid: string, status: "AI" | "HUMAN", lastMessage: string, timestamp: number }> = {};
+let activeChats: Record<string, { jid: string, name?: string, status: "AI" | "HUMAN", lastMessage: string, timestamp: number }> = {};
 
 // -- Firebase Sync Helpers --
 async function loadDataFromFirebase() {
@@ -205,7 +205,8 @@ A HORA ATUAL É: ${now.toLocaleTimeString("pt-BR")}.
       timestamp: new Date().toISOString(),
       userMessage: message,
       aiResponse: reply.replace("[TRANSFERIR]", "").trim(),
-      jid: userId
+      jid: userId,
+      name: activeChats[userId]?.name || userId.split('@')[0]
     });
     
     saveHistoryToFirebase();
@@ -272,6 +273,7 @@ async function startWhatsApp() {
     if (!msg.message || msg.key.fromMe) return;
 
     const jid = msg.key.remoteJid;
+    const pushName = msg.pushName || jid?.split('@')[0];
     if (!jid || jid.includes("@g.us") || jid.includes("@broadcast") || jid === "status@broadcast") return; // Ignore groups and status
 
     // Ignore old messages (older than 2 minutes)
@@ -286,8 +288,9 @@ async function startWhatsApp() {
     
     // Register or update active chat
     if (!activeChats[jid]) {
-      activeChats[jid] = { jid, status: "AI", lastMessage: text, timestamp: Date.now() };
+      activeChats[jid] = { jid, name: pushName, status: "AI", lastMessage: text, timestamp: Date.now() };
     } else {
+      activeChats[jid].name = pushName || activeChats[jid].name;
       activeChats[jid].lastMessage = text;
       activeChats[jid].timestamp = Date.now();
     }
