@@ -40,22 +40,24 @@ export default function Dashboard() {
       const chats = await api.getActiveChats();
       
       // Check for notifications
-      if ("Notification" in window && Notification.permission === "granted") {
-        chats.forEach(chat => {
-          const prevStatus = prevChatsRef.current[chat.jid];
-          if (prevStatus === "AI" && chat.status === "HUMAN") {
+      chats.forEach(chat => {
+        const prevStatus = prevChatsRef.current[chat.jid];
+        if (prevStatus === "AI" && chat.status === "HUMAN") {
+          // Play sound
+          const audio = new Audio("https://cdn.pixabay.com/download/audio/2021/08/04/audio_0625c1539c.mp3?filename=success-1-6297.mp3");
+          audio.volume = 0.5;
+          audio.play().catch(e => console.log("Audio play blocked by browser", e));
+
+          // Show browser notification
+          if ("Notification" in window && Notification.permission === "granted") {
             new Notification("Novo Atendimento Humano!", {
-              body: `O cliente ${chat.jid.split('@')[0]} solicitou atendimento humano (Teste/Plano).`,
-              icon: "/vite.svg" // You can replace with an actual icon path if available
+              body: `O cliente ${chat.name || chat.jid.split('@')[0]} solicitou atendimento humano (Teste/Plano).`,
+              icon: "/vite.svg" 
             });
           }
-          prevChatsRef.current[chat.jid] = chat.status;
-        });
-      } else {
-        chats.forEach(chat => {
-          prevChatsRef.current[chat.jid] = chat.status;
-        });
-      }
+        }
+        prevChatsRef.current[chat.jid] = chat.status;
+      });
 
       setActiveChats(chats);
     } catch (error) {
@@ -76,21 +78,33 @@ export default function Dashboard() {
   };
 
   const toggleChatStatus = async (jid: string) => {
+    // Optimistic update
+    setActiveChats(prev => 
+      prev.map(chat => 
+        chat.jid === jid 
+          ? { ...chat, status: chat.status === "AI" ? "HUMAN" : "AI" } 
+          : chat
+      )
+    );
     try {
       await api.toggleActiveChat(jid);
       loadData();
     } catch (error) {
       console.error(error);
+      loadData(); // Revert on error
     }
   };
 
   const activeAICount = activeChats.filter(c => c.status === "AI").length;
   
+  const uniqueClientsCount = Object.keys(groupedHistory).length;
+  const totalMessagesCount = history.length;
+  
   const stats = [
-    { label: "Mensagens Respondidas", value: history.length * 2, icon: MessageCircle, color: "text-blue-500", bg: "bg-blue-500/20" },
-    { label: "Clientes Atendidos", value: history.length, icon: Users, color: "text-emerald-500", bg: "bg-emerald-500/20" },
+    { label: "Mensagens Respondidas", value: totalMessagesCount, icon: MessageCircle, color: "text-blue-500", bg: "bg-blue-500/20" },
+    { label: "Clientes Atendidos", value: uniqueClientsCount, icon: Users, color: "text-emerald-500", bg: "bg-emerald-500/20" },
     { label: "Tempo Médio (IA)", value: "1.2s", icon: Zap, color: "text-amber-500", bg: "bg-amber-500/20" },
-    { label: "Economia", value: `${(history.length * 5)} min`, icon: Clock, color: "text-purple-500", bg: "bg-purple-500/20" },
+    { label: "Economia", value: `${(uniqueClientsCount * 3)} min`, icon: Clock, color: "text-purple-500", bg: "bg-purple-500/20" },
   ];
 
   if (loading) {
