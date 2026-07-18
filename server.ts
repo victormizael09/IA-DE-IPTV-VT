@@ -253,7 +253,8 @@ async function startWhatsApp() {
     printQRInTerminal: false,
     auth: state,
     logger: pino({ level: "silent" }) as any,
-    browser: ["Ubuntu", "Chrome", "20.0.04"]
+    browser: ["Ubuntu", "Chrome", "20.0.04"],
+    markOnlineOnConnect: false
   });
   
   sock.ev.on('creds.update', async () => {
@@ -287,6 +288,7 @@ async function startWhatsApp() {
       waQr = "";
       waPairingCode = "";
       console.log('WhatsApp Connected!');
+      await sock.sendPresenceUpdate('unavailable');
     }
   });
 
@@ -391,7 +393,7 @@ async function startWhatsApp() {
     
     // Simulate delay
     await new Promise(r => setTimeout(r, 1500));
-    await sock.readMessages([msg.key]);
+    // Not calling sock.readMessages([msg.key]) here so the user receives the notification on their phone
 
     const reply = await generateAIResponse(text, jid);
     
