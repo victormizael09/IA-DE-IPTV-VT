@@ -418,6 +418,7 @@ async function startWhatsApp() {
     }
 
     await sock.sendMessage(jid, { text: cleanReply });
+    await sock.sendPresenceUpdate('unavailable');
   });
 
   waSocket = sock;
